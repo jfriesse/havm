@@ -1,0 +1,311 @@
+#!/bin/bash
+
+usage() {
+    echo "$0: action [params...]"
+    echo "where action is"
+    echo "	list - list all vms and it's status"
+    echo "	start vm - start virtual machine"
+    echo "	kill vm - kill (non ACPI, hard one) virtual machine"
+    echo "	status vm - display status of vm"
+    echo "	stop vm [timeout] - stop (ACPI) virtual machine. If timeout is defuined and vm"
+    echo "                          exists after that, kill it"
+    echo "	reset vm - reset virtual machine"
+    echo "	stop-all timeout - stop all running virtual machines"
+    exit 1
+}
+
+[ "$HAVM_VM_PATH" == "" ] && echo "HAVM_VM_PATH unset!" >&2 && exit 1
+
+# Find vm with given name.
+# If path begins with /, it's taken as full vm dir -> no conversion needed,
+# otherwise HAVM_VM_PATH path is used
+find_vm() {
+    if [ "${1:0:1}" == "/" ]; then
+	echo "$1"
+	exit 0
+    fi
+
+    IFS=:
+    for path in $HAVM_VM_PATH;do
+        for i in $path/*/args;do
+	    if [ -f "$i" ];then
+		dname=${i%/args}
+		vmname=${dname##*/}
+
+		if [ "$vmname" == "$1" ];then
+		    echo "$dname"
+
+		    exit 0
+		fi
+	    fi
+	done
+    done
+    unset IFS
+
+    exit 1
+}
+
+# $1 must be full path to vm
+vm_pidfile() {
+    echo "$1/pid"
+}
+
+# $1 must be full path to vm
+vm_pid() {
+    pid_file=`vm_pidfile "$1"`
+
+    if [ -f "$pid_file" ];then
+	pid=`cat "$pid_file"`
+	ps -p $pid >/dev/null 2>&1
+	[ "$?" == 0 ] && echo $pid && exit 0
+    fi
+
+    exit 1
+}
+
+vm_shortname() {
+    vmname=${1##*/}
+    echo $vmname
+}
+
+# $1 - pid of qemu
+find_monitor() {
+    line=`ps h -p $1 -o args`
+    [ $? != 0 ] && exit 1
+
+    parse_next=false
+    for i in $line;do
+	if [ "$parse_next" == true ];then
+	    res=`echo "$i" | grep tcp 2>/dev/null`
+	    if [ "$?" == 0 ];then
+		prefix=${res##*:}
+		port=${prefix%%,*}
+		echo $port
+		exit 0
+	    fi
+	fi
+
+	if [ "$i" == "-monitor" ];then
+	    parse_next=true
+	fi
+    done
+
+    exit 1
+}
+
+# $1 - pid of qemu
+find_vnc() {
+    line=`ps h -p $1 -o args`
+    [ $? != 0 ] && exit 1
+
+    parse_next=false
+    for i in $line;do
+	if [ "$parse_next" == true ];then
+	    if [ "$i" == "none" ];then
+		exit 1
+	    fi
+	    echo ${i##*:}
+	    exit 0
+	fi
+
+	if [ "$i" == "-vnc" ];then
+	    parse_next=true
+	fi
+    done
+
+    exit 1
+}
+
+status_vm() {
+    vm_path=`find_vm "$1"`
+    [ "$?" != 0 ] && echo "Can't find vm $1" >&2 && exit 1
+    pid=`vm_pid "$vm_path"`
+    if [ "$?" == 0 ];then
+	status="running:pid=$pid"
+	monitor=`find_monitor $pid`
+	[ "$?" == 0 ] && status="$status:monitor=$monitor"
+	vnc=`find_vnc $pid`
+	[ "$?" == 0 ] && status="$status:vnc=$vnc"
+    else
+	status="stopped"
+    fi
+
+    short_name=`vm_shortname "$vm_path"`
+    echo "$short_name:$vm_path:$status"
+}
+
+list_vms() {
+    IFS=:
+    for path in $HAVM_VM_PATH;do
+	for i in $path/*/args;do
+	    dname=${i%/args}
+	    unset IFS
+	    [ -d "$dname" ] && status_vm "$dname"
+	    IFS=:
+	done
+    done
+    unset IFS
+}
+
+# $1 is parameters for qemu
+# $2 is vm short name
+# $3 return qemu_env (false) or qemu_params(true)
+parse_bridge_params() {
+    parse_next=false
+    bridge_no=1
+    for i in $1;do
+	if [ "$parse_next" == true ];then
+	    IFS=,
+	    first_item=true
+	    for p in $i;do
+		[ "$first_item" == false ] && qemu_params="$qemu_params," || first_item=false
+		if [ "${p%=*}" == "bridge" ];then
+		    ifname=""${2//[^a-zA-Z0-9]/}"$bridge_no"
+		    qemu_params="$qemu_params""ifname=$ifname"
+		    qemu_env="$qemu_env kvm_bridge_$ifname="${p/*=}
+		    bridge_no=$(($bridge_no+1))
+		    qemu_params="$qemu_params,script=`readlink -f \"$0\"`-ifup"
+		else
+		    qemu_params="$qemu_params$p"
+		fi
+	    done
+	    unset IFS
+	    qemu_params="$qemu_params "
+	    continue 
+	fi
+
+	if [ "$i" == "-net" ];then
+	    parse_next=true
+	fi
+
+	qemu_params="$qemu_params$i "
+    done
+
+    [ "$3" != false ] && echo $qemu_params || echo $qemu_env
+}
+
+start_vm() {
+    [ -f "/usr/libexec/qemu-kvm" ] && qemu_cmd="/usr/libexec/qemu-kvm"
+    [ -f "/usr/bin/qemu-kvm" ] && qemu_cmd="/usr/bin/qemu-kvm"
+    [ -f "/usr/local/bin/qemu-kvm" ] && qemu_cmd="/usr/local/bin/qemu-kvm"
+    [ "$HAVM_QEMU_CMD" != "" ] && qemu_cmd="$HAVM_QEMU_CMD"
+    [ ! -x "$qemu_cmd" ] && echo "Can't find executable qemu-kvm. To force path, set HAVM_QEMU_CMD" >&2 && exit 1
+
+    vm_path=`find_vm "$1"`
+    [ "$?" != 0 ] && echo "Can't find vm $1" >&2 && exit 1
+
+    pid=`vm_pid "$vm_path"`
+    [ "$?" == 0 ] && echo "VM is already running" >&2 && exit 1
+
+    short_name=`vm_shortname "$vm_path"`
+
+    args=`cat "$vm_path/args"`
+    pid_file=`vm_pidfile "$vm_path"`
+
+    qemu_args=`parse_bridge_params "$args" "$short_name" true`
+    qemu_args="$qemu_args -daemonize -pidfile $pid_file"
+    qemu_env=`parse_bridge_params "$args" "$short_name" false`
+
+    (cd "$vm_path"; env $qemu_env "$qemu_cmd" $qemu_args )
+}
+
+kill_vm() {
+    vm_path=`find_vm "$1"`
+    [ "$?" != 0 ] && echo "Can't find vm $1" >&2 && exit 1
+
+    pid=`vm_pid "$vm_path"`
+    [ "$?" != 0 ] && echo "Can't find vm pid" >&2 && exit 1
+    kill $pid
+
+    rm -f `vm_pidfile "$vm_path"`
+}
+
+# 1 - vm
+# 2 - command
+send_monitor_cmd() {
+    vm_path=`find_vm "$1"`
+    [ "$?" != 0 ] && echo "Can't find vm $1" >&2 && exit 1
+
+    pid=`vm_pid "$vm_path"`
+    [ "$?" != 0 ] && echo "Can't find vm pid" >&2 && exit 1
+
+    monitor=`find_monitor "$pid"`
+    [ "$?" != 0 ] && echo "VM doesn't have monitor" >&2 && exit 1
+
+    echo "$2" | nc 127.0.0.1 "$monitor" >/dev/null
+}
+
+stop_vm() {
+    vm_path=`find_vm "$1"`
+    [ "$?" != 0 ] && echo "Can't find vm $1" >&2 && exit 1
+
+    pid=`vm_pid "$vm_path"`
+    [ "$?" != 0 ] && echo "Can't find vm pid" >&2 && exit 1
+
+    monitor=`find_monitor "$pid"`
+    [ "$?" != 0 ] && echo "VM doesn't have monitor" >&2 && exit 1
+
+    send_monitor_cmd "$1" "system_powerdown"
+    if [ "$2" != "" ];then
+	for ((i=0;i<$2;i++));do
+	    sleep 1
+	    pid=`vm_pid "$vm_path"`
+	    [ "$?" != 0 ] && rm -f `vm_pidfile "$vm_path"` && exit 0
+	done
+
+	kill_vm "$1"
+    fi
+
+}
+
+stop_all_vms() {
+    list_vms | (while read line;do
+	vmname=${line%%:*}
+	status=${line#*:}
+	status=${status#*:}
+	status=${status%%:*}
+	if [ "$status" == "running" ];then
+	    "$0" "stop" "$vmname" "$1" &
+	    ppid="$ppid $!"
+	fi
+    done
+
+    wait $ppid
+    )
+}
+
+case "$1" in
+"list")
+    list_vms
+    ;;
+"status")
+    [ "$2" == "" ] && usage
+    status_vm "$2"
+    ;;
+"start")
+    [ "$2" == "" ] && usage
+    start_vm "$2"
+    ;;
+"kill")
+    [ "$2" == "" ] && usage
+    kill_vm "$2"
+    ;;
+"stop")
+    [ "$2" == "" ] && usage
+    stop_vm "$2" "$3"
+    ;;
+"reset")
+    [ "$2" == "" ] && usage
+    send_monitor_cmd "$2" "system_reset"
+    ;;
+"stop-all")
+    [ "$2" == "" ] && usage
+    stop_all_vms "$2"
+    ;;
+"autostart")
+    auto_start_vms
+    ;;
+*)
+    usage
+    ;;
+esac

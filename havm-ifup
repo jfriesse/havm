@@ -1,0 +1,17 @@
+#!/bin/bash
+
+br_var=kvm_bridge_$1
+br='$'`echo "$br_var"`
+br=`eval echo $br`
+
+[ "$br" == "" ] && echo "No bridge found!" && exit 1
+if [ -n "$1" ];then
+    /sbin/ifconfig "$1" up || exit 1
+    sleep 0.5s
+    /usr/sbin/brctl addif "$br" $1 || exit 1
+
+    exit 0
+else
+    echo "Error: no interface specified"
+    exit 1
+fi
