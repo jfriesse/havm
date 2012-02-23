@@ -302,9 +302,6 @@ case "$1" in
     [ "$2" == "" ] && usage
     stop_all_vms "$2"
     ;;
-"autostart")
-    auto_start_vms
-    ;;
 *)
     usage
     ;;
