@@ -26,6 +26,8 @@ if [ -d /etc/default ]; then
 	[ -f /etc/default/$prog ] && . /etc/default/$prog
 fi
 
+[ -z "$LOCK_FILE" ] && LOCK_FILE="/var/lock/subsys/$prog"
+
 # set secure PATH
 PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/sbin:"
 
@@ -36,6 +38,7 @@ start() {
 
 	$prog autostart
 	rtrn=$?
+	touch $LOCK_FILE
 }
 
 stop() {
@@ -45,6 +48,7 @@ stop() {
 
 	$prog stop-all "$HAVM_TIMEOUT"
 	rtrn=$?
+	rm -f $LOCK_FILE
 }
 
 restart() {
