@@ -16,6 +16,10 @@ usage() {
     exit 1
 }
 
+if [ "$HAVM_VM_PATH" == "" ];then
+    [ -f /etc/sysconfig/havm ] && . /etc/sysconfig/havm
+fi
+
 [ "$HAVM_VM_PATH" == "" ] && echo "HAVM_VM_PATH unset!" >&2 && exit 1
 
 # Find vm with given name.
