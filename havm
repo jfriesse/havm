@@ -7,10 +7,12 @@ usage() {
     echo "	start vm - start virtual machine"
     echo "	kill vm - kill (non ACPI, hard one) virtual machine"
     echo "	status vm - display status of vm"
-    echo "	stop vm [timeout] - stop (ACPI) virtual machine. If timeout is defuined and vm"
-    echo "                          exists after that, kill it"
+    echo "	stop vm [timeout] - stop (ACPI) virtual machine. If timeout is defined and vm"
+    echo "                            still lives after it's expiration, kill action is executedt"
     echo "	reset vm - reset virtual machine"
     echo "	stop-all timeout - stop all running virtual machines"
+    echo "	autostart - start non-running virtual machines with autostart flag"
+
     exit 1
 }
 
@@ -274,6 +276,22 @@ stop_all_vms() {
     )
 }
 
+auto_start_vms() {
+    IFS=:
+    for path in $HAVM_VM_PATH;do
+	for i in $path/*/args;do
+	    dname=${i%/args}
+	    unset IFS
+	    if [ -d "$dname" ] && [ -f "$dname/autostart" ];then
+		pid=`vm_pid "$dname"`
+		[ "$?" != 0 ] && start_vm "$dname"
+	    fi
+	    IFS=:
+	done
+    done
+    unset IFS
+}
+
 case "$1" in
 "list")
     list_vms
@@ -301,6 +319,9 @@ case "$1" in
 "stop-all")
     [ "$2" == "" ] && usage
     stop_all_vms "$2"
+    ;;
+"autostart")
+    auto_start_vms
     ;;
 *)
     usage
