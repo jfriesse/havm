@@ -1,0 +1,11 @@
+# Path where HAVM controlled VM are stored
+HAVM_VM_PATH=/mnt/vm
+
+# Timeout when stopping
+HAVM_TIMEOUT=120
+
+# Shutdown machines on shutdown
+HAVM_AUTOSTOP=true
+
+# Start machines on boot
+HAVM_AUTOSTART=true

@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# chkconfig: - 99 01
+# description: Honzuv Administrator Virtualnich Masin
+
+### BEGIN INIT INFO
+# Provides:		havm
+# Required-Start:	$network $syslog
+# Required-Stop:	$network $syslog
+# Default-Start:
+# Default-Stop:
+# Short-Description:	Starts and stops VM on system boot/shutdown
+# Description:		Starts and stops VM on system boot/shutdown
+### END INIT INFO
+
+prog="havm"
+
+# rpm based distros
+if [ -d /etc/sysconfig ]; then
+	[ -f /etc/init.d/functions ] && . /etc/init.d/functions
+	[ -f /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
+fi
+
+# deb based distros
+if [ -d /etc/default ]; then
+	[ -f /etc/default/$prog ] && . /etc/default/$prog
+fi
+
+# set secure PATH
+PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/sbin:"
+
+start() {
+	[ "$HAVM_AUTOSTART" != true ] && exit 0
+
+	echo "Starting HAVM controlled VMs"
+
+	$prog autostart
+	rtrn=$?
+}
+
+stop() {
+	[ "$HAVM_AUTOSTOP" != true ] && exit 0
+
+	echo "Stopping HAVM controlled VMs"
+
+	$prog stop-all "$HAVM_TIMEOUT"
+	rtrn=$?
+}
+
+restart() {
+	stop
+	start
+	rtrn=$?
+}
+
+[ "$HAVM_VM_PATH" == "" ] && echo "HAVM_VM_PATH is unset!" >&2 && exit 3
+export HAVM_VM_PATH
+[ "$HAVM_TIMEOUT" == "" ] && HAVM_TIMEOUT=120
+[ "$HAVM_AUTOSTOP" == "" ] && HAVM_AUTOSTOP=true
+[ "$HAVM_AUTOSTART" == "" ] && HAVM_AUTOSTART=true
+
+rtrn=0
+
+case "$1" in
+start)
+    start
+    ;;
+restart|reload|force-reload)
+    restart
+    ;;
+condrestart|try-restart)
+    restart
+    ;;
+status)
+    $prog list
+    rtrn=$?
+    ;;
+stop)
+    stop
+    ;;
+*)
+    echo "usage: $0 {start|stop|restart|reload|force-reload|condrestart|try-restart|status}"
+    rtrn=2
+    ;;
+esac
+
+exit $rtrn
