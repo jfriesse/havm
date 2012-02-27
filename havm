@@ -22,7 +22,7 @@ usage() {
     echo "	kill vm - kill (non ACPI, hard one) virtual machine"
     echo "	status vm - display status of vm"
     echo "	stop vm [timeout] - stop (ACPI) virtual machine. If timeout is defined and vm"
-    echo "                            still lives after it's expiration, kill action is executedt"
+    echo "                            still lives after it's expiration, kill action is executed"
     echo "	reset vm - reset virtual machine"
     echo "	stop-all timeout - stop all running virtual machines"
     echo "	autostart - start non-running virtual machines with autostart flag"
