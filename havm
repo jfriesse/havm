@@ -257,7 +257,6 @@ send_monitor_cmd() {
 
     echo $res | grep -- '-q' >/dev/null 2>&1
     [ "$?" == 0 ] && extra_params="-q 0"
-    echo $extra_params
 
     echo "$2" | nc $extra_params 127.0.0.1 "$monitor" >/dev/null
 }
