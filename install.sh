@@ -31,8 +31,10 @@ case "$1" in
     install havm havm-ifup "$DESTDIR/$BINDIR"
 
     if [ "$2" == "--init" ];then
-	install init/havm "$DESTDIR/etc/init.d"
-        install init/sysconfig/havm "$DESTDIR/etc/sysconfig"
+	mkdir -p "$DESTDIR/etc/init.d/"
+	mkdir -p "$DESTDIR/etc/sysconfig/"
+	install init/havm "$DESTDIR/etc/init.d/"
+	install init/sysconfig/havm "$DESTDIR/etc/sysconfig/"
         chkconfig --add havm
         chkconfig havm on
     fi
