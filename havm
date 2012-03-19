@@ -252,7 +252,14 @@ send_monitor_cmd() {
     monitor=`find_monitor "$pid"`
     [ "$?" != 0 ] && echo "VM doesn't have monitor" >&2 && exit 1
 
-    echo "$2" | nc 127.0.0.1 "$monitor" >/dev/null
+    res=`nc -h 2>&1`
+    [ "$res" == "" ] && echo "NC is not installed" >&2 && exit 1
+
+    echo $res | grep -- '-q' >/dev/null 2>&1
+    [ "$?" == 0 ] && extra_params="-q 0"
+    echo $extra_params
+
+    echo "$2" | nc $extra_params 127.0.0.1 "$monitor" >/dev/null
 }
 
 stop_vm() {
