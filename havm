@@ -205,14 +205,15 @@ parse_bridge_params() {
 }
 
 start_vm() {
+    vm_path=`find_vm "$1"`
+    [ "$?" != 0 ] && echo "Can't find vm $1" >&2 && exit 1
+
     [ -f "/usr/libexec/qemu-kvm" ] && qemu_cmd="/usr/libexec/qemu-kvm"
     [ -f "/usr/bin/qemu-kvm" ] && qemu_cmd="/usr/bin/qemu-kvm"
     [ -f "/usr/local/bin/qemu-kvm" ] && qemu_cmd="/usr/local/bin/qemu-kvm"
+    [ -f "$vm_path/qemu" ] && qemu_cmd="$vm_path/qemu"
     [ "$HAVM_QEMU_CMD" != "" ] && qemu_cmd="$HAVM_QEMU_CMD"
     [ ! -x "$qemu_cmd" ] && echo "Can't find executable qemu-kvm. To force path, set HAVM_QEMU_CMD" >&2 && exit 1
-
-    vm_path=`find_vm "$1"`
-    [ "$?" != 0 ] && echo "Can't find vm $1" >&2 && exit 1
 
     pid=`vm_pid "$vm_path"`
     [ "$?" == 0 ] && echo "VM is already running" >&2 && exit 1
